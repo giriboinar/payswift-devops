@@ -1,0 +1,41 @@
+# Plain Kubernetes manifests for PaySwift (SIMULATION).
+# Apply with kubectl after building/pushing the image, or use the Helm
+# chart in helm/payswift instead. These manifests are the local-kind path
+# documented in README.md; nothing here provisions cloud resources.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payswift-api
+  labels:
+    app: payswift-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payswift-api
+  template:
+    metadata:
+      labels:
+        app: payswift-api
+    spec:
+      containers:
+        - name: api
+          image: payswift-api:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: payswift-config
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 20

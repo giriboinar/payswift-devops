@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payswift-config
+  labels:
+    app: payswift-api
+data:
+  # Local/demo values only. Point these at real services when deploying
+  # for real; never put secrets in a ConfigMap.
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  PAYSWIFT_KAFKA_TOPIC: "payswift.payments"
