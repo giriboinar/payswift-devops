@@ -46,7 +46,7 @@ flowchart LR
 | Docker Compose | Whole stack on one machine | The runnable path: no cloud account needed |
 | Kubernetes + Helm | Deployment manifests + chart | Same app, deployable to any cluster (kind locally) |
 | Jenkins shared library | build / test / scan / helm-deploy steps | Pipelines as reusable code, not copy-pasted jobs |
-| GitHub Actions + Trivy | Test, build, image scan gate | HIGH/CRITICAL findings fail the build |
+| GitHub Actions + Trivy | Test, build, image scan (report-only) | Scan reports findings; it does not fail the build (remaining bookworm OS findings have no available fix) |
 | Terraform (EKS + RDS) | Cloud design, **NOT APPLIED** | Shows the target architecture; applying it costs real money |
 
 ## What is real vs what is simulated
