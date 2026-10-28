@@ -1,0 +1,12 @@
+# Default values for the PaySwift Helm chart (simulation defaults).
+replicaCount: 2
+image:
+  repository: payswift-api
+  tag: local
+  pullPolicy: IfNotPresent
+service:
+  port: 80
+  targetPort: 8000
+env:
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  PAYSWIFT_KAFKA_TOPIC: "payswift.payments"
