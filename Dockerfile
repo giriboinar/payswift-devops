@@ -1,5 +1,5 @@
 # PaySwift API image (simulation). Pinned base, non-root user, no secrets.
-FROM python:3.12.4-slim
+FROM python:3.12.16-slim-bookworm
 
 WORKDIR /app
 COPY requirements.txt .
