@@ -1,0 +1,5 @@
+# Pinned runtime dependencies (PaySwift simulation API).
+fastapi==0.115.6
+uvicorn==0.32.1
+kafka-python==2.0.2
+psycopg[binary]==3.2.3

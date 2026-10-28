@@ -1,0 +1,149 @@
+# PaySwift LOCAL stack (SIMULATION — runs on your own machine only).
+# ---------------------------------------------------------------------------
+# This compose file is the runnable deployment path. It is NOT a production
+# setup: Vault runs in dev mode, Postgres uses local demo credentials from
+# .env (see .env.example), and nothing here touches AWS.
+# Requires Docker on your machine. Copy .env.example to .env first.
+#   docker compose up --build
+# ---------------------------------------------------------------------------
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      PAYSWIFT_DATABASE_URL: postgres://payswift:${POSTGRES_PASSWORD:-payswift-demo-local}@postgres-primary:5432/payswift
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      PAYSWIFT_KAFKA_TOPIC: payswift.payments
+      AUDIT_LOG_PATH: /app/logs/audit.log
+      VAULT_ADDR: http://vault:8200
+    volumes:
+      - audit-logs:/app/logs
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      vault:
+        condition: service_started
+
+  postgres-primary:
+    image: postgres:16.4
+    environment:
+      POSTGRES_USER: payswift
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-payswift-demo-local}
+      POSTGRES_DB: payswift
+    command: >
+      postgres -c wal_level=replica -c max_wal_senders=5
+      -c wal_keep_size=64MB -c hot_standby=on
+    volumes:
+      - pg-primary:/var/lib/postgresql/data
+      - ./docker/postgres-primary-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payswift -d payswift"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # Streaming-replication standby. The entrypoint script (see
+  # docker/postgres-replica-entrypoint.sh) runs pg_basebackup from the
+  # primary on first start, then starts Postgres in standby mode.
+  # This is the replica the failover demo promotes.
+  postgres-replica:
+    image: postgres:16.4
+    environment:
+      POSTGRES_USER: payswift
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-payswift-demo-local}
+      POSTGRES_DB: payswift
+      PRIMARY_HOST: postgres-primary
+      REPLICA_PASSWORD: ${POSTGRES_PASSWORD:-payswift-demo-local}
+    entrypoint: ["/bin/bash", "/entrypoint/replica-entrypoint.sh"]
+    volumes:
+      - pg-replica:/var/lib/postgresql/data
+      - ./docker/postgres-replica-entrypoint.sh:/entrypoint/replica-entrypoint.sh:ro
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+
+  kafka:
+    # Single-node KRaft broker (no Zookeeper) — enough for a local demo.
+    image: apache/kafka:3.7.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: payswift-demo-cluster-id-0001
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  vault:
+    # DEV MODE ONLY — in-memory, unsealed automatically, demo token only.
+    # Never use dev mode (or this token) for real secrets.
+    image: hashicorp/vault:1.16.3
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: payswift-demo-dev-token
+      VAULT_DEV_LISTEN_ADDR: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    cap_add:
+      - IPC_LOCK
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.0
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.14.0
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # Lightweight log shipper (replaces Logstash for local runs): tails the
+  # API audit log and indexes each JSON line into Elasticsearch, so the
+  # audit trail is visible in Kibana. See scripts/log_shipper.py.
+  log-shipper:
+    build:
+      context: .
+      dockerfile: docker/log-shipper.Dockerfile
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+    volumes:
+      - audit-logs:/app/logs:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+volumes:
+  pg-primary:
+  pg-replica:
+  es-data:
+  audit-logs:
